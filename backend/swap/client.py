@@ -32,7 +32,25 @@ def execute_token_swap(
     to_sym = to_token.upper()
 
     if chain_cfg.name == "avalanche-fuji" and is_real_swap_configured():
-        real = execute_real_swap(from_sym, to_sym, amount, slippage_percent, chain_cfg.name)
+        try:
+            real = execute_real_swap(from_sym, to_sym, amount, slippage_percent, chain_cfg.name)
+        except Exception as exc:
+            # "TransferHelper: TRANSFER_FROM_FAILED" is LFJ's router-level
+            # revert for "the router tried to pull tokens from this wallet
+            # and couldn't" - almost always insufficient balance or an
+            # approval that didn't go through, not a bug in this code. The
+            # raw exception also carries a long hex-encoded revert blob
+            # that's real but unreadable to anyone hitting this - worth
+            # translating into something actionable rather than a wall of
+            # 0x-prefixed bytes.
+            msg = str(exc)
+            if "TRANSFER_FROM_FAILED" in msg:
+                raise ValueError(
+                    f"Swap failed: this wallet doesn't have enough {from_sym} on "
+                    f"avalanche-fuji to cover the swap (or the approval didn't go "
+                    f"through). Fund the wallet with testnet {from_sym} first."
+                ) from exc
+            raise
         return {
             "status": "CONFIRMED",
             "tx_hash": real["tx_hash"],

@@ -81,6 +81,8 @@ function pickToolFromMessage(text) {
       describe: (d) =>
         d.status === "PENDING"
           ? `${d.message} (tracking ID: ${d.checkout_request_id})`
+          : d.status === "FAILED"
+          ? `Payout failed: ${d.detail || d.error || "unknown error"}`
           : `Paid out ${d.amount_delivered} ${d.currency} to ${d.recipient} via ${d.network} (ref ${d.transaction_id}).`,
     };
   }
