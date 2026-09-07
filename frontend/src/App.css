@@ -2,6 +2,10 @@
   box-sizing: border-box;
 }
 
+:root {
+  --font-display: "Archivo", Inter, system-ui, sans-serif;
+}
+
 body {
   margin: 0;
   font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont,
@@ -23,7 +27,9 @@ button {
   min-height: 100vh;
   display: flex;
   background: #070a09;
-  background-image: radial-gradient(circle at 15% 0%, rgba(217, 255, 79, 0.05), transparent 40%);
+  background-image:
+    radial-gradient(circle at 15% 0%, rgba(217, 255, 79, 0.05), transparent 40%),
+    repeating-linear-gradient(180deg, rgba(217, 255, 79, 0.025) 0px, rgba(217, 255, 79, 0.025) 1px, transparent 1px, transparent 96px);
 }
 
 .sidebar {
@@ -184,6 +190,8 @@ button {
 .topbar h2 {
   margin: 5px 0 0;
   font-size: 20px;
+  font-family: var(--font-display);
+  font-weight: 700;
 }
 
 .topbar-right {
@@ -217,18 +225,23 @@ button {
 }
 
 .balance-card {
-  background: linear-gradient(120deg, #172019, #101613);
-  border: 1px solid #29352e;
+  background: linear-gradient(135deg, #1a2416 0%, #101613 55%, #0d1210 100%);
+  border: 1px solid #34432a;
   border-radius: 15px;
-  padding: 25px;
+  padding: 28px 25px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  position: relative;
+  overflow: hidden;
 }
 
 .balance-card h3 {
-  margin: 9px 0 4px;
-  font-size: 32px;
+  margin: 10px 0 4px;
+  font-size: 46px;
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: -1px;
 }
 
 .positive {
@@ -302,6 +315,8 @@ button {
 
 .rate strong {
   font-size: 38px;
+  font-family: var(--font-display);
+  font-weight: 700;
 }
 
 .rate span {
@@ -363,13 +378,14 @@ button {
 
 .dashboard-agent {
   margin-top: 18px;
-  border: 1px solid #3b492f;
+  border: 1px solid #4a5e34;
   border-radius: 15px;
-  padding: 24px;
-  background: linear-gradient(135deg, #111913, #0b100d);
+  padding: 26px 28px;
+  background: linear-gradient(135deg, #161f13 0%, #0e1310 70%);
   display: flex;
   justify-content: space-between;
   align-items: center;
+  box-shadow: 0 0 0 1px rgba(217, 255, 79, 0.04), 0 20px 40px -25px rgba(217, 255, 79, 0.25);
 }
 
 .dashboard-agent-icon,
@@ -390,7 +406,9 @@ button {
 
 .dashboard-agent h3 {
   margin: 7px 0;
-  font-size: 18px;
+  font-size: 19px;
+  font-family: var(--font-display);
+  font-weight: 700;
 }
 
 .dashboard-agent p {
@@ -433,9 +451,11 @@ button {
 }
 
 .agent-page-header h1 {
-  font-size: 29px;
+  font-size: 30px;
   letter-spacing: -0.8px;
   margin: 8px 0;
+  font-family: var(--font-display);
+  font-weight: 700;
 }
 
 .agent-page-header p {

@@ -43,7 +43,17 @@ _CACHE_TTL_SECONDS = 30
 
 
 def _fiat_quote(token: str, fiat: str) -> float:
-    """Return token->fiat rate via CoinGecko (public fallback oracle)."""
+    """Return token->fiat rate via CoinGecko (public fallback oracle).
+
+    If a live fetch fails (rate limit, timeout, CoinGecko outage) but a
+    previous successful fetch for this exact pair exists - even an
+    expired one - that's returned instead of raising. A dashboard rate
+    display should very rarely go blank; a rate that's a few minutes
+    older than ideal is a far better outcome than "unavailable", and
+    still a real, previously-fetched number, not an invented one. Only
+    the very first request for a pair (nothing cached yet at all) can
+    still raise, since there's genuinely nothing to fall back to.
+    """
     cache_key = f"{token.upper()}:{fiat.upper()}"
     now = time.time()
     cached = _price_cache.get(cache_key)
@@ -52,10 +62,15 @@ def _fiat_quote(token: str, fiat: str) -> float:
 
     coin_id = COINGECKO_IDS.get(token.upper(), COINGECKO_IDS["USDC"])
     url = f"{COINGECKO_BASE}?ids={coin_id}&vs_currencies={fiat.lower()}"
-    res = requests.get(url, timeout=10)
-    res.raise_for_status()
-    data = res.json()
-    rate = float(data.get(coin_id, {}).get(fiat.lower(), 1.0))
+    try:
+        res = requests.get(url, timeout=10)
+        res.raise_for_status()
+        data = res.json()
+        rate = float(data.get(coin_id, {}).get(fiat.lower(), 1.0))
+    except Exception:
+        if cached is not None:
+            return cached[0]
+        raise
 
     _price_cache[cache_key] = (rate, now)
     return rate
