@@ -171,18 +171,35 @@ function App() {
 
   useEffect(() => {
     let cancelled = false;
-    callTool("fetch_market_price", { token: "USDC", quote: "KES" })
-      .then((res) => {
-        if (cancelled) return;
-        if (res.success) {
-          setOverviewRate(res.data);
-        } else {
-          setOverviewRateError(res.error || "Unknown error");
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) setOverviewRateError(err.message);
-      });
+    let attempt = 0;
+    const maxAttempts = 3;
+
+    const tryFetch = () => {
+      callTool("fetch_market_price", { token: "USDC", quote: "KES" })
+        .then((res) => {
+          if (cancelled) return;
+          if (res.success) {
+            setOverviewRate(res.data);
+            setOverviewRateError(null);
+          } else if (attempt < maxAttempts - 1) {
+            attempt += 1;
+            setTimeout(tryFetch, 5000);
+          } else {
+            setOverviewRateError(res.error || "Unknown error");
+          }
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          if (attempt < maxAttempts - 1) {
+            attempt += 1;
+            setTimeout(tryFetch, 5000);
+          } else {
+            setOverviewRateError(err.message);
+          }
+        });
+    };
+
+    tryFetch();
     return () => {
       cancelled = true;
     };
