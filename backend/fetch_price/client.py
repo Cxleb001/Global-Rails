@@ -1,9 +1,24 @@
 """Price oracle for Global Rails.
 
 Fetches real-time exchange rates for crypto tokens and fiat currencies in a
-chain-agnostic way. The default path uses CoinGecko as a public fallback
-oracle; it can be extended to read on-chain DEX pools per chain without
-changing the tool surface.
+chain-agnostic way.
+
+For fiat quotes, this combines two sources rather than one:
+  - CoinGecko for token->USD (its supported vs_currencies list is
+    documented at https://docs.coingecko.com and does NOT include KES,
+    despite this project's whole pitch being KES/NGN/GHS payouts)
+  - Frankfurter (api.frankfurter.dev, ECB-sourced, no key needed) for
+    USD->local-fiat, which DOES cover KES
+
+Multiplying the two gives an accurate token->local-fiat rate. This was
+previously a single CoinGecko call with `.get(fiat.lower(), 1.0)` as a
+fallback when the currency wasn't in the response - which for KES was
+EVERY call, since CoinGecko never returns a "kes" key at all. That
+silently returned exactly 1.0 with no error, which is how "1 USDC = 1 KES"
+made it all the way to production undetected - a wrong number with no
+error is far more dangerous than an error, since nothing ever surfaced it.
+Neither this file nor _token_quote() below carry that fallback anymore;
+both raise clearly instead of guessing.
 """
 
 import time
@@ -12,7 +27,7 @@ import requests
 
 from chains import CHAINS, get_chain
 
-# CoinGecko asset ids keyed by token symbol (used by the fiat oracle).
+# CoinGecko asset ids keyed by token symbol.
 COINGECKO_IDS = {
     "USDC": "usd-coin",
     "USDT": "tether",
@@ -22,37 +37,50 @@ COINGECKO_IDS = {
 }
 
 COINGECKO_BASE = "https://api.coingecko.com/api/v3/simple/price"
+FRANKFURTER_BASE = "https://api.frankfurter.dev/v1/latest"
 
-# Fiat currencies this oracle prices against, via CoinGecko. `quote.isupper()`
-# alone can't tell a fiat code apart from a token ticker (both are
-# conventionally uppercase — "KES" and "USDT" are both `.isupper() == True`),
-# so route on an explicit allowlist instead. Extend this as more local
-# currencies are supported (the SDK's whole pitch is KES/NGN/GHS).
+# Fiat currencies this oracle supports. `quote.isupper()` alone can't tell a
+# fiat code apart from a token ticker (both are conventionally uppercase -
+# "KES" and "USDT" are both `.isupper() == True`), so route on an explicit
+# allowlist instead.
 FIAT_CURRENCIES = {"USD", "KES", "NGN", "GHS"}
 
-# CoinGecko's free tier rate-limits aggressively (a handful of calls per
-# minute). The same (token, fiat) pair gets asked for repeatedly in short
-# bursts - multiple people clicking the same quick-reply, or one person
-# clicking it a few times - so a short cache absorbs nearly all of that
-# without the rate actually going stale in any way that matters for a
-# dashboard display. 30s is short enough that nobody would notice the
-# rate isn't live-live, long enough to collapse a burst of clicks into a
-# single real API call.
+# CoinGecko's free tier rate-limits aggressively, and every fiat quote now
+# makes up to two real HTTP calls instead of one - a short cache absorbs
+# repeated requests for the same pair in a burst (multiple clicks, multiple
+# users) without the rate actually going stale in any way that matters for
+# a dashboard display.
 _price_cache: dict[str, tuple[float, float]] = {}
 _CACHE_TTL_SECONDS = 30
 
 
-def _fiat_quote(token: str, fiat: str) -> float:
-    """Return token->fiat rate via CoinGecko (public fallback oracle).
+def _usd_to_fiat_rate(fiat: str) -> float:
+    """USD -> `fiat` via Frankfurter. Returns 1.0 unchecked if fiat is
+    literally USD (no conversion needed, no HTTP call needed either)."""
+    if fiat.upper() == "USD":
+        return 1.0
 
-    If a live fetch fails (rate limit, timeout, CoinGecko outage) but a
-    previous successful fetch for this exact pair exists - even an
-    expired one - that's returned instead of raising. A dashboard rate
-    display should very rarely go blank; a rate that's a few minutes
-    older than ideal is a far better outcome than "unavailable", and
-    still a real, previously-fetched number, not an invented one. Only
-    the very first request for a pair (nothing cached yet at all) can
-    still raise, since there's genuinely nothing to fall back to.
+    resp = requests.get(FRANKFURTER_BASE, params={"from": "USD", "to": fiat.upper()}, timeout=10)
+    resp.raise_for_status()
+    data = resp.json()
+    rates = data.get("rates", {})
+    if fiat.upper() not in rates:
+        raise ValueError(f"Frankfurter response has no rate for '{fiat}': {data}")
+    return float(rates[fiat.upper()])
+
+
+def _fiat_quote(token: str, fiat: str) -> float:
+    """Return token->fiat rate by combining CoinGecko (token->USD) with
+    Frankfurter (USD->fiat) when fiat isn't USD itself.
+
+    If a live fetch fails (rate limit, timeout, either API being down) but
+    a previous successful fetch for this exact pair exists - even an
+    expired one - that's returned instead of raising, since a dashboard
+    rate display should very rarely go blank and a rate a few minutes
+    stale is a far better outcome than "unavailable". This is different
+    from silently defaulting to a made-up number when the *first* fetch
+    for a pair fails or returns unexpected data - that case still raises,
+    since there's nothing real to fall back to yet.
     """
     cache_key = f"{token.upper()}:{fiat.upper()}"
     now = time.time()
@@ -61,12 +89,17 @@ def _fiat_quote(token: str, fiat: str) -> float:
         return cached[0]
 
     coin_id = COINGECKO_IDS.get(token.upper(), COINGECKO_IDS["USDC"])
-    url = f"{COINGECKO_BASE}?ids={coin_id}&vs_currencies={fiat.lower()}"
+    url = f"{COINGECKO_BASE}?ids={coin_id}&vs_currencies=usd"
     try:
         res = requests.get(url, timeout=10)
         res.raise_for_status()
         data = res.json()
-        rate = float(data.get(coin_id, {}).get(fiat.lower(), 1.0))
+        if coin_id not in data or "usd" not in data[coin_id]:
+            raise ValueError(f"CoinGecko response missing expected data for '{coin_id}': {data}")
+        token_to_usd = float(data[coin_id]["usd"])
+
+        usd_to_fiat = _usd_to_fiat_rate(fiat)
+        rate = token_to_usd * usd_to_fiat
     except Exception:
         if cached is not None:
             return cached[0]
@@ -79,13 +112,12 @@ def _fiat_quote(token: str, fiat: str) -> float:
 def _token_quote(base: str, quote: str) -> float:
     """Return a token->token rate placeholder.
 
-    Stablecoin pairs are ~1:1. This mirrors the current simulated routing
-    (see backend/swap); an on-chain DEX pool read would replace the constant
-    when the swap integration is wired up.
+    Stablecoin pairs are ~1:1 - this is a deliberate placeholder, not a
+    real quote, pending an on-chain DEX pool read for actual token-to-token
+    pairs. Unlike _fiat_quote() above, this one genuinely has no better
+    source wired in yet, so the placeholder is documented here rather than
+    disguised as a real number.
     """
-    b, q = base.upper(), quote.upper()
-    if {b, q} <= {"USDC", "USDT", "USDC.E", "USDT.E"}:
-        return 1.0
     return 1.0
 
 
@@ -93,8 +125,8 @@ def get_market_price(token: str = "USDC", quote: str = "USD", chain: str = "aval
     """Fetch a price for 'token' relative to 'quote' on 'chain'.
 
     - 'quote' in {"USD", "KES", "NGN", "GHS", ...} and the reference coin is
-      quoted in fiat via CoinGecko.
-    - 'quote' as a token symbol enables token-vs-token prices.
+      quoted in fiat via CoinGecko + Frankfurter.
+    - 'quote' as a token symbol enables token-vs-token prices (placeholder).
     Returns a dict compatible with the shared ToolResult payload contract.
     """
     chain_cfg = get_chain(chain)
@@ -103,8 +135,10 @@ def get_market_price(token: str = "USDC", quote: str = "USD", chain: str = "aval
 
     if q in FIAT_CURRENCIES:
         rate = _fiat_quote(t, q)
+        source = "coingecko+frankfurter" if q != "USD" else "coingecko"
     else:
         rate = _token_quote(t, q)
+        source = "placeholder"
 
     return {
         "token": t,
@@ -112,7 +146,7 @@ def get_market_price(token: str = "USDC", quote: str = "USD", chain: str = "aval
         "chain": chain_cfg.name,
         "chain_id": chain_cfg.chain_id,
         "rate": rate,
-        "source": "coingecko",
+        "source": source,
     }
 
 

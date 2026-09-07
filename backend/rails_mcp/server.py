@@ -121,6 +121,18 @@ try:
             return (f"Sent {d.get('amount')} {d.get('token')} to {d.get('to_address')} "
                     f"(gas {d.get('gas_fee_usdc')} USDC).")
         if tool_name == "off_ramp_payout":
+            # Real Daraja calls can come back as PENDING (prompt sent,
+            # result not known yet) or FAILED (Daraja rejected the
+            # request outright - bad credentials, invalid phone, etc.) -
+            # neither shape has amount_delivered/network/transaction_id,
+            # which is what the old unconditional success-only formatting
+            # below used to read, producing "Paid out undefined KES..."
+            # instead of surfacing what actually happened.
+            status = d.get("status")
+            if status == "PENDING":
+                return f"{d.get('message', 'Prompt sent')} (tracking ID: {d.get('checkout_request_id')})"
+            if status == "FAILED":
+                return f"Payout failed: {d.get('detail') or d.get('error') or 'unknown error'}"
             return (f"Paid out {d.get('amount_delivered')} {d.get('currency')} to "
                     f"{d.get('recipient')} via {d.get('network')} (ref {d.get('transaction_id')}).")
         if tool_name == "x402_get_invoice":
