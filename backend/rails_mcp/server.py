@@ -170,7 +170,15 @@ try:
         if not groq_key:
             return JSONResponse({"configured": False, "error": "GROQ_API_KEY is not set"})
 
-        model = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+        # llama-3.3-70b-versatile (the previous default here) was
+        # deprecated and retired by Groq - every call to it returns a
+        # plain 404, which this route's own error handling (below) would
+        # normally surface clearly, except the *frontend* silently treats
+        # any /api/agent/chat failure as "fall back to the keyword
+        # router" rather than showing the error - so this was failing
+        # 100% of the time with no visible symptom except the agent
+        # never seeming to understand free-form phrasing.
+        model = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
         messages = (
             [{"role": "system", "content": GROQ_SYSTEM_PROMPT}]
             + [{"role": h.get("role", "user"), "content": h.get("content", "")} for h in history]

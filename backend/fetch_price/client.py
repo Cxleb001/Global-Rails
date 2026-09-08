@@ -56,11 +56,18 @@ _CACHE_TTL_SECONDS = 30
 
 def _usd_to_fiat_rate(fiat: str) -> float:
     """USD -> `fiat` via Frankfurter. Returns 1.0 unchecked if fiat is
-    literally USD (no conversion needed, no HTTP call needed either)."""
+    literally USD (no conversion needed, no HTTP call needed either).
+
+    Frankfurter's actual parameter names are `base` and `symbols` (per
+    the official docs at frankfurter.dev/v1) - a different, older
+    Frankfurter domain (frankfurter.app) uses `from`/`to` instead, which
+    is what this originally, incorrectly used, producing a 404 on every
+    single call against api.frankfurter.dev specifically.
+    """
     if fiat.upper() == "USD":
         return 1.0
 
-    resp = requests.get(FRANKFURTER_BASE, params={"from": "USD", "to": fiat.upper()}, timeout=10)
+    resp = requests.get(FRANKFURTER_BASE, params={"base": "USD", "symbols": fiat.upper()}, timeout=10)
     resp.raise_for_status()
     data = resp.json()
     rates = data.get("rates", {})
