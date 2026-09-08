@@ -7,8 +7,8 @@ For fiat quotes, this combines two sources rather than one:
   - CoinGecko for token->USD (its supported vs_currencies list is
     documented at https://docs.coingecko.com and does NOT include KES,
     despite this project's whole pitch being KES/NGN/GHS payouts)
-  - Frankfurter (api.frankfurter.dev, ECB-sourced, no key needed) for
-    USD->local-fiat, which DOES cover KES
+  - open.er-api.com (ExchangeRate-API's free, no-key endpoint) for
+    USD->local-fiat, which DOES cover KES across 166 currencies
 
 Multiplying the two gives an accurate token->local-fiat rate. This was
 previously a single CoinGecko call with `.get(fiat.lower(), 1.0)` as a
@@ -37,7 +37,7 @@ COINGECKO_IDS = {
 }
 
 COINGECKO_BASE = "https://api.coingecko.com/api/v3/simple/price"
-FRANKFURTER_BASE = "https://api.frankfurter.dev/v1/latest"
+EXCHANGERATE_BASE = "https://open.er-api.com/v6/latest"
 
 # Fiat currencies this oracle supports. `quote.isupper()` alone can't tell a
 # fiat code apart from a token ticker (both are conventionally uppercase -
@@ -55,30 +55,40 @@ _CACHE_TTL_SECONDS = 30
 
 
 def _usd_to_fiat_rate(fiat: str) -> float:
-    """USD -> `fiat` via Frankfurter. Returns 1.0 unchecked if fiat is
-    literally USD (no conversion needed, no HTTP call needed either).
+    """USD -> `fiat` via open.er-api.com (ExchangeRate-API's free, no-key
+    "Open Access" endpoint). Returns 1.0 unchecked if fiat is literally
+    USD (no conversion needed, no HTTP call needed either).
 
-    Frankfurter's actual parameter names are `base` and `symbols` (per
-    the official docs at frankfurter.dev/v1) - a different, older
-    Frankfurter domain (frankfurter.app) uses `from`/`to` instead, which
-    is what this originally, incorrectly used, producing a 404 on every
-    single call against api.frankfurter.dev specifically.
+    This replaces an earlier Frankfurter-based implementation. Two
+    Frankfurter attempts both hit real, confirmed problems - not
+    guesswork, both verified live in production: the first used the
+    wrong parameter names (from/to instead of base/symbols, mixing up
+    two different Frankfurter domains' conventions), and the second,
+    with the correct parameter names confirmed present in the actual
+    request URL, still got a 404 from Frankfurter's API itself for KES
+    specifically. Rather than guess at a third Frankfurter variation,
+    this switches providers entirely - open.er-api.com uses base
+    currency directly in the URL path rather than query parameters,
+    removing that whole class of mistake, and covers 166 currencies in
+    a single request.
     """
     if fiat.upper() == "USD":
         return 1.0
 
-    resp = requests.get(FRANKFURTER_BASE, params={"base": "USD", "symbols": fiat.upper()}, timeout=10)
+    resp = requests.get(f"{EXCHANGERATE_BASE}/USD", timeout=10)
     resp.raise_for_status()
     data = resp.json()
+    if data.get("result") != "success":
+        raise ValueError(f"open.er-api.com did not return success: {data}")
     rates = data.get("rates", {})
     if fiat.upper() not in rates:
-        raise ValueError(f"Frankfurter response has no rate for '{fiat}': {data}")
+        raise ValueError(f"open.er-api.com response has no rate for '{fiat}': {data}")
     return float(rates[fiat.upper()])
 
 
 def _fiat_quote(token: str, fiat: str) -> float:
     """Return token->fiat rate by combining CoinGecko (token->USD) with
-    Frankfurter (USD->fiat) when fiat isn't USD itself.
+    open.er-api.com (USD->fiat) when fiat isn't USD itself.
 
     If a live fetch fails (rate limit, timeout, either API being down) but
     a previous successful fetch for this exact pair exists - even an
@@ -132,7 +142,7 @@ def get_market_price(token: str = "USDC", quote: str = "USD", chain: str = "aval
     """Fetch a price for 'token' relative to 'quote' on 'chain'.
 
     - 'quote' in {"USD", "KES", "NGN", "GHS", ...} and the reference coin is
-      quoted in fiat via CoinGecko + Frankfurter.
+      quoted in fiat via CoinGecko + open.er-api.com.
     - 'quote' as a token symbol enables token-vs-token prices (placeholder).
     Returns a dict compatible with the shared ToolResult payload contract.
     """
@@ -142,7 +152,7 @@ def get_market_price(token: str = "USDC", quote: str = "USD", chain: str = "aval
 
     if q in FIAT_CURRENCIES:
         rate = _fiat_quote(t, q)
-        source = "coingecko+frankfurter" if q != "USD" else "coingecko"
+        source = "coingecko+exchangerate-api" if q != "USD" else "coingecko"
     else:
         rate = _token_quote(t, q)
         source = "placeholder"
