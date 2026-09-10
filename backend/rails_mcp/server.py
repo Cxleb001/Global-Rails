@@ -181,12 +181,43 @@ try:
     async def agent_chat_route(request: Request) -> JSONResponse:
         import json
         import os
+        import re
 
         import httpx
 
         data = await request.json()
         message = data.get("message", "")
         history = data.get("history", [])
+
+        # Deterministic pre-check for M-Pesa payout intent, mirroring the
+        # frontend's own keyword-router pattern for this exact case
+        # (App.jsx). A system-prompt fix was tried first for this - Groq
+        # kept inconsistently routing "send X USDC to M-Pesa <phone>" to
+        # fetch_market_price instead of off_ramp_payout even with explicit
+        # disambiguation instructions, confirmed by live testing after the
+        # prompt change was verified deployed. Since this specific pattern
+        # (payout verb + M-Pesa/MoMo mention) is unambiguous, a regex check
+        # here is simply more reliable than continuing to tune a prompt for
+        # an LLM's tool-selection judgment call. Anything that doesn't match
+        # this narrow, explicit pattern still goes to Groq as normal below.
+        if re.search(r"m-?pesa|momo|mobile money|off.?ramp|payout", message, re.I) and re.search(
+            r"\b(send|pay|transfer|cash\s*out)\b", message, re.I
+        ):
+            amount_match = re.search(r"([\d.]+)\s*([a-zA-Z]+)", message)
+            phone_match = re.search(r"(?:\+?254|0)([71]\d{8})\b", message)
+            off_ramp_args = {
+                "amount": float(amount_match.group(1)) if amount_match else 20,
+                "currency": "KES",
+                "phone_number": phone_match.group(0) if phone_match else "254700000000",
+            }
+            tool_result = execute_tool_payload("off_ramp_payout", off_ramp_args)
+            return JSONResponse({
+                "configured": True,
+                "reply": _format_reply("off_ramp_payout", tool_result),
+                "tool_used": "off_ramp_payout",
+                "tool_args": off_ramp_args,
+                "tool_result": tool_result,
+            })
 
         groq_key = os.environ.get("GROQ_API_KEY", "")
         if not groq_key:
