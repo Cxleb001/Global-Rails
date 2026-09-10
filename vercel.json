@@ -8,7 +8,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "https://global-rails-production.up.railway.app/api/$1"
+      "destination": "https://global-rails-inn8.onrender.com/api/$1"
     },
     {
       "source": "/(.*)",
