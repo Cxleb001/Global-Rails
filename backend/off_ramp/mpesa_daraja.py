@@ -31,6 +31,7 @@ letting it be a silent surprise later.
 from __future__ import annotations
 
 import base64
+import logging
 import time
 from datetime import datetime
 
@@ -38,18 +39,33 @@ import requests
 
 from . import config as mpesa_config
 
+logger = logging.getLogger(__name__)
+
 _PENDING: dict[str, dict] = {}
 _token_cache: dict[str, float | str | None] = {"token": None, "expires_at": 0}
 
 
 def _configured() -> bool:
-    return all([
-        mpesa_config.CONSUMER_KEY,
-        mpesa_config.CONSUMER_SECRET,
-        mpesa_config.SHORTCODE,
-        mpesa_config.PASSKEY,
-        mpesa_config.CALLBACK_URL,
-    ])
+    values = {
+        "MPESA_CONSUMER_KEY": mpesa_config.CONSUMER_KEY,
+        "MPESA_CONSUMER_SECRET": mpesa_config.CONSUMER_SECRET,
+        "MPESA_SHORTCODE": mpesa_config.SHORTCODE,
+        "MPESA_PASSKEY": mpesa_config.PASSKEY,
+        "MPESA_CALLBACK_URL": mpesa_config.CALLBACK_URL,
+    }
+    # Temporary diagnostic: multiple rounds of manually checking each
+    # value's length in Railway's console (paste issues made this
+    # error-prone) haven't pinned down why _configured() keeps returning
+    # False despite the person confirming all 5 look correct. This logs
+    # presence/absence (never the actual secret values) every time this
+    # is checked, so the real answer shows up directly in Railway's Logs
+    # tab on the next attempt, no console needed.
+    missing = [name for name, val in values.items() if not val]
+    if missing:
+        logger.warning("mpesa _configured() = False, missing: %s", missing)
+    else:
+        logger.info("mpesa _configured() = True, all 5 values present")
+    return not missing
 
 
 def _normalize_phone(phone_number: str) -> str:
