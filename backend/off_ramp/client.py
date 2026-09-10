@@ -13,9 +13,12 @@ status immediately when a real push is sent, not SUCCESS, since the
 actual result isn't known yet at this point.
 """
 
+import logging
 import uuid
 
 from . import mpesa_daraja
+
+logger = logging.getLogger(__name__)
 
 
 def execute_mobile_payout(phone_number: str, amount_fiat: float, currency: str = "KES") -> dict:
@@ -26,6 +29,14 @@ def execute_mobile_payout(phone_number: str, amount_fiat: float, currency: str =
     Otherwise: returns a simulated successful response matching HoneyCoin's
     b2b fiat payout contract, same as before.
     """
+    # Temporary diagnostic: the previous logging added inside
+    # mpesa_daraja._configured() never showed up in Render's logs at all.
+    # `currency == "KES" and mpesa_daraja._configured()` short-circuits in
+    # Python - if currency isn't exactly "KES", _configured() is never
+    # even called, which would fully explain that missing log line
+    # regardless of what the env vars actually contain. This logs the
+    # exact currency value received, before that check runs at all.
+    logger.warning("execute_mobile_payout called with currency=%r (repr, to catch case/whitespace issues)", currency)
     if currency == "KES" and mpesa_daraja._configured():
         result = mpesa_daraja.initiate_stk_push(
             phone_number=phone_number,
