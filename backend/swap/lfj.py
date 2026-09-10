@@ -102,7 +102,10 @@ def _amount_from_receipt(receipt: dict, token_addr: str, recipient: str) -> int:
             if log["address"].lower() != token_addr:
                 continue
             topics = log.get("topics") or []
-            if len(topics) < 3 or topics[0].hex().lower() != TRANSFER_TOPIC.lower():
+            if len(topics) < 3:
+                continue
+            topic0 = "0x" + topics[0].hex().removeprefix("0x")
+            if topic0.lower() != TRANSFER_TOPIC.lower():
                 continue
             if ("0x" + topics[2].hex()[-40:]).lower() != recipient:
                 continue
@@ -175,7 +178,14 @@ def execute_real_swap(from_token: str, to_token: str, amount: float, slippage_pe
     })
     signed_swap = Account.sign_transaction(swap_tx, private_key)
     tx_hash = w3.eth.send_raw_transaction(signed_swap.raw_transaction)
-    tx_hash_hex = tx_hash.hex()
+    # HexBytes.hex() on the installed web3.py version (8.0.0, confirmed
+    # directly) returns the hash WITHOUT a "0x" prefix - unlike plain
+    # Python bytes.hex(), which callers might reasonably expect this to
+    # match. Every tx_hash and explorer_url this produced was therefore
+    # missing "0x", making every single Snowtrace link genuinely invalid
+    # ("Oops! An invalid Transaction hash has been entered") despite the
+    # swap itself succeeding correctly on-chain the whole time.
+    tx_hash_hex = "0x" + tx_hash.hex().removeprefix("0x")
 
     receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=180)
     if receipt["status"] != 1:
