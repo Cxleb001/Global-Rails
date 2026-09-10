@@ -163,7 +163,18 @@ try:
         "be reasonably defaulted. For anything else, just respond conversationally. "
         "For swap_tokens specifically, unless the user names a different chain, "
         "always pass chain=\"avalanche-fuji\" - that's the only chain with real "
-        "on-chain execution wired up right now; other chains stay simulated."
+        "on-chain execution wired up right now; other chains stay simulated. "
+        "Disambiguation that matters here: a message can mention a token "
+        "(USDC) and a fiat concept (KES, M-Pesa) together for two very "
+        "different reasons - don't default to fetch_market_price just "
+        "because both appear. If the message asks what something IS WORTH "
+        "or costs right now (\"rate\", \"worth\", \"how much is\", \"what's the "
+        "price\"), that's fetch_market_price. If it asks to actually MOVE "
+        "money (\"send\", \"pay\", \"transfer\", \"cash out\", \"off-ramp\") to a "
+        "phone number or to M-Pesa/MoMo, that's off_ramp_payout every time, "
+        "even though the message also names a token and implies a "
+        "conversion - the token/amount named is what gets paid out, not "
+        "what's being priced."
     )
 
     @mcp.custom_route("/api/agent/chat", methods=["POST"])
