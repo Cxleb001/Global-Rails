@@ -114,6 +114,17 @@ try:
         if tool_name == "fetch_market_price":
             return f"1 {d.get('token')} = {d.get('rate')} {d.get('quote')} on {d.get('chain')}."
         if tool_name == "swap_tokens":
+            # Mirrors the frontend's own describe() for this same tool
+            # (App.jsx) - that version already checks explorer_url
+            # correctly. This backend copy is what Groq's path actually
+            # uses once Groq is working (see the GROQ_MODEL fix above),
+            # and it never got the same explorer_url check, so it always
+            # showed a truncated tx hash instead of a clickable Snowtrace
+            # link even for real, successful avalanche-fuji swaps.
+            if d.get("explorer_url"):
+                return (f"Swapped {d.get('amount_in')} {d.get('from_token')} for "
+                        f"{d.get('amount_out')} {d.get('to_token')} on {d.get('chain')} via "
+                        f"{d.get('dex')}. Verify: {d.get('explorer_url')}")
             return (f"Swapped {d.get('amount_in')} {d.get('from_token')} for "
                     f"{d.get('amount_out')} {d.get('to_token')} on {d.get('chain')} "
                     f"(tx {str(d.get('tx_hash', ''))[:10]}...).")
@@ -152,7 +163,18 @@ try:
         "be reasonably defaulted. For anything else, just respond conversationally. "
         "For swap_tokens specifically, unless the user names a different chain, "
         "always pass chain=\"avalanche-fuji\" - that's the only chain with real "
-        "on-chain execution wired up right now; other chains stay simulated."
+        "on-chain execution wired up right now; other chains stay simulated. "
+        "Disambiguation that matters here: a message can mention a token "
+        "(USDC) and a fiat concept (KES, M-Pesa) together for two very "
+        "different reasons - don't default to fetch_market_price just "
+        "because both appear. If the message asks what something IS WORTH "
+        "or costs right now (\"rate\", \"worth\", \"how much is\", \"what's the "
+        "price\"), that's fetch_market_price. If it asks to actually MOVE "
+        "money (\"send\", \"pay\", \"transfer\", \"cash out\", \"off-ramp\") to a "
+        "phone number or to M-Pesa/MoMo, that's off_ramp_payout every time, "
+        "even though the message also names a token and implies a "
+        "conversion - the token/amount named is what gets paid out, not "
+        "what's being priced."
     )
 
     @mcp.custom_route("/api/agent/chat", methods=["POST"])
