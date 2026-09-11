@@ -100,5 +100,5 @@ def execute_mobile_payout(phone_number: str, amount_fiat: float, currency: str =
         # the "latest" entries haven't captured genuinely new activity).
         # Surfacing the same info directly in the response itself instead -
         # this is visible immediately in the chat, no log-viewing needed.
-        "_debug_currency_check": f"currency={currency!r}, is_KES={currency == 'KES'}, configured={mpesa_daraja._configured()}",
+        "_debug_currency_check": f"currency={currency!r}, is_KES={currency == 'KES'}, configured={mpesa_daraja._configured()}, missing={mpesa_daraja._missing_vars()}",
     }
