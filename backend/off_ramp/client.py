@@ -94,4 +94,11 @@ def execute_mobile_payout(phone_number: str, amount_fiat: float, currency: str =
         "amount_delivered": amount_fiat,
         "currency": currency,
         "network": "MoMo",
+        # Temporary debug field: Render's log search/viewer has proven too
+        # unreliable this session to actually see the earlier logger.warning
+        # diagnostics (search fails even on plain terms, and screenshots of
+        # the "latest" entries haven't captured genuinely new activity).
+        # Surfacing the same info directly in the response itself instead -
+        # this is visible immediately in the chat, no log-viewing needed.
+        "_debug_currency_check": f"currency={currency!r}, is_KES={currency == 'KES'}, configured={mpesa_daraja._configured()}",
     }

@@ -144,8 +144,10 @@ try:
                 return f"{d.get('message', 'Prompt sent')} (tracking ID: {d.get('checkout_request_id')})"
             if status == "FAILED":
                 return f"Payout failed: {d.get('detail') or d.get('error') or 'unknown error'}"
+            debug_suffix = f" [DEBUG: {d['_debug_currency_check']}]" if d.get("_debug_currency_check") else ""
             return (f"Paid out {d.get('amount_delivered')} {d.get('currency')} to "
-                    f"{d.get('recipient')} via {d.get('network')} (ref {d.get('transaction_id')}).")
+                    f"{d.get('recipient')} via {d.get('network')} (ref {d.get('transaction_id')})."
+                    f"{debug_suffix}")
         if tool_name == "x402_get_invoice":
             return (f"Resolved invoice {d.get('invoice_id')}: {d.get('amount')} {d.get('token')} "
                     f"on {d.get('chain')} (status {d.get('status')}).")
