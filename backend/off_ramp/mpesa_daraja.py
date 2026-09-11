@@ -45,7 +45,8 @@ _PENDING: dict[str, dict] = {}
 _token_cache: dict[str, float | str | None] = {"token": None, "expires_at": 0}
 
 
-def _configured() -> bool:
+def _missing_vars() -> list:
+    """Names of required MPESA_* env vars that are currently empty/unset."""
     values = {
         "MPESA_CONSUMER_KEY": mpesa_config.CONSUMER_KEY,
         "MPESA_CONSUMER_SECRET": mpesa_config.CONSUMER_SECRET,
@@ -53,14 +54,20 @@ def _configured() -> bool:
         "MPESA_PASSKEY": mpesa_config.PASSKEY,
         "MPESA_CALLBACK_URL": mpesa_config.CALLBACK_URL,
     }
+    return [name for name, val in values.items() if not val]
+
+
+def _configured() -> bool:
     # Temporary diagnostic: multiple rounds of manually checking each
-    # value's length in Railway's console (paste issues made this
+    # value's length in the platform console (paste issues made this
     # error-prone) haven't pinned down why _configured() keeps returning
-    # False despite the person confirming all 5 look correct. This logs
-    # presence/absence (never the actual secret values) every time this
-    # is checked, so the real answer shows up directly in Railway's Logs
-    # tab on the next attempt, no console needed.
-    missing = [name for name, val in values.items() if not val]
+    # False despite the person confirming all 5 look correct, and the
+    # platform's own log viewer/search has also proven too unreliable to
+    # actually see this. This logs presence/absence (never the actual
+    # secret values), and the exact same info is now also surfaced
+    # directly in the chat response via _missing_vars() - see
+    # off_ramp/client.py's "_debug_currency_check" field.
+    missing = _missing_vars()
     if missing:
         logger.warning("mpesa _configured() = False, missing: %s", missing)
     else:
