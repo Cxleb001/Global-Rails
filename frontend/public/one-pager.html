@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Global Rails — One-Pager</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0A0C08;
+    --text: #ECEEE3;
+    --muted: #97A089;
+    --accent: #D7F23A;
+    --accent-dim: #4B5430;
+    --rule: #242820;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+  }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    display: flex;
+    justify-content: center;
+    padding: 56px 24px 72px;
+  }
+  .page { max-width: 760px; width: 100%; }
+
+  h1.wordmark {
+    font-size: clamp(32px, 6vw, 46px);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 0 0 8px;
+  }
+  .tagline {
+    color: var(--accent);
+    font-weight: 600;
+    font-size: clamp(15px, 2.2vw, 17px);
+    margin: 0 0 6px;
+  }
+  .subline {
+    color: var(--muted);
+    font-size: 13.5px;
+    margin: 0 0 26px;
+  }
+
+  .rails {
+    position: relative;
+    height: 9px;
+    margin-bottom: 38px;
+    background-image: repeating-linear-gradient(to right, var(--accent-dim) 0 1.4px, transparent 1.4px 16px);
+    background-size: 100% 1.4px;
+    background-repeat: repeat-x;
+    background-position: center;
+  }
+  .rails::before, .rails::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0;
+    height: 1.6px;
+    background: var(--accent);
+  }
+  .rails::before { top: 0; }
+  .rails::after { bottom: 0; }
+
+  .section { margin-bottom: 32px; }
+  .mark { width: 18px; height: 3px; background: var(--accent); margin-bottom: 11px; }
+
+  h2 {
+    font-size: 18.5px;
+    font-weight: 600;
+    margin: 0 0 9px;
+    letter-spacing: -0.005em;
+  }
+  p { font-size: 14.5px; line-height: 1.58; margin: 0; color: var(--text); }
+
+  .cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 36px;
+  }
+  @media (max-width: 620px) {
+    .cols { grid-template-columns: 1fr; gap: 28px; }
+  }
+
+  .stage-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 9px;
+  }
+  .stage-row h2 { margin: 0; }
+  .badge {
+    display: inline-block;
+    border: 1px solid var(--accent-dim);
+    border-radius: 4px;
+    color: var(--accent);
+    font-size: 12.5px;
+    font-weight: 500;
+    padding: 5px 12px;
+    white-space: nowrap;
+  }
+
+  ul.checklist {
+    list-style: none;
+    margin: 12px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+  }
+  ul.checklist li {
+    position: relative;
+    padding-left: 19px;
+    font-size: 14.5px;
+    line-height: 1.5;
+  }
+  ul.checklist li::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 6px;
+    width: 7px; height: 7px;
+    background: var(--accent);
+  }
+
+  footer {
+    border-top: 1px solid var(--rule);
+    margin-top: 44px;
+    padding-top: 20px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+  }
+  @media (max-width: 620px) {
+    footer { grid-template-columns: 1fr; gap: 16px; }
+  }
+  .f-label { color: var(--muted); font-size: 12px; font-weight: 500; margin: 0 0 4px; }
+  .f-val { color: var(--text); font-size: 14px; font-weight: 500; margin: 0; word-break: break-word; }
+  .f-val a { color: var(--text); text-decoration: none; border-bottom: 1px solid var(--accent-dim); }
+  .f-val a:hover { border-bottom-color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1 class="wordmark">Global Rails</h1>
+  <p class="tagline">Autonomous financial execution</p>
+  <p class="subline">Stablecoins to spendable local currency, in one conversation.</p>
+  <div class="rails"></div>
+
+  <div class="section cols">
+    <div>
+      <div class="mark"></div>
+      <h2>The problem</h2>
+      <p>Getting stablecoins into money people can actually spend is still broken where it matters most. Someone in Kenya holding USDC has to find a DEX, manage gas, locate a separate cash-out service, and trust a quoted rate before any of it is spendable. Most crypto payment tools stop at the wallet and leave the last mile — actually landing in M-Pesa — as somebody else's problem.</p>
+    </div>
+    <div>
+      <div class="mark"></div>
+      <h2>The solution</h2>
+      <p>Global Rails is a financial agent that does the whole journey in one request: check a live rate, swap on-chain, and pay out straight to M-Pesa — in plain language, not a multi-app workflow. It's built MCP-native, so the same swap, transfer and off-ramp tools behind our chat can be called directly by other AI agents and products, not only through our own interface.</p>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="mark"></div>
+    <h2>Who it's for, and why it wins</h2>
+    <p>Built first for Kenya's stablecoin-to-M-Pesa corridor: diaspora senders moving money to family, freelancers and contractors paid in stablecoins who need spendable KES, and fintechs or AI agents that want a working off-ramp as a callable tool rather than a project of their own. The edge isn't the idea — it's that the execution is real: on-chain settlement you can verify on Snowtrace, not a simulated demo, wrapped in an interface simple enough to use in one sentence.</p>
+  </div>
+
+  <div class="section">
+    <div class="mark"></div>
+    <div class="stage-row">
+      <h2>Where we are</h2>
+      <span class="badge">Stage – testnet, pre-launch</span>
+    </div>
+    <ul class="checklist">
+      <li>Working product live end-to-end — chat agent, on-chain swap, transfer, rate-check and x402 flows — frontend and backend both deployed.</li>
+      <li>Real on-chain swaps executing and verifiable on Avalanche Fuji (Snowtrace-confirmed), not simulated.</li>
+      <li>Live FX pricing feed for accurate USDC/KES quotes.</li>
+      <li>Safaricom Daraja (M-Pesa) payout integration built and in final sandbox testing ahead of production.</li>
+      <li>No live users or transaction volume yet — that's precisely what the ask below is for.</li>
+    </ul>
+  </div>
+
+  <div class="section" style="margin-bottom:0;">
+    <div class="mark"></div>
+    <h2>What we're looking for</h2>
+    <p>Pre-seed funding to take the M-Pesa integration from sandbox to production and fund initial float; pilot partners — remittance platforms, diaspora-focused fintechs, mobile money aggregators — for a Kenya-first rollout; and early customers willing to move real value through it first.</p>
+  </div>
+
+  <footer>
+    <div>
+      <p class="f-label">Founder(s)</p>
+      <p class="f-val">Caleb Samante</p>
+    </div>
+    <div>
+      <p class="f-label">Contact</p>
+      <p class="f-val"><a href="mailto:calebsamante001@gmail.com">calebsamante001@gmail.com</a></p>
+    </div>
+    <div>
+      <p class="f-label">Product</p>
+      <p class="f-val"><a href="https://global-rails-azure.vercel.app" target="_blank" rel="noopener">global-rails-azure.vercel.app</a></p>
+    </div>
+  </footer>
+
+</div>
+</body>
+</html>
