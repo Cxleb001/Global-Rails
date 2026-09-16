@@ -83,6 +83,36 @@ try:
         return JSONResponse(get_stk_status(checkout_id))
 
     # -----------------------------------------------------------------------
+    # Temporary debug route: Render's log search/viewer and the in-chat
+    # debug suffix both required triggering a real payout attempt through
+    # the UI to see anything. This is a plain GET so the current state of
+    # the *running process's* env (not just what the dashboard shows) can
+    # be checked directly by URL, no test message needed. Never returns
+    # full secret values - only presence/length - since this route has no
+    # auth and is reachable by anyone with the URL. Delete once resolved.
+    # -----------------------------------------------------------------------
+    @mcp.custom_route("/api/debug/mpesa-config", methods=["GET"])
+    async def mpesa_debug_route(request: Request) -> JSONResponse:
+        from off_ramp import config as mpesa_config
+        from off_ramp.mpesa_daraja import _configured, _missing_vars
+
+        def masked(val: str) -> str:
+            return f"present ({len(val)} chars)" if val else "MISSING/EMPTY"
+
+        return JSONResponse({
+            "MPESA_CONSUMER_KEY": masked(mpesa_config.CONSUMER_KEY),
+            "MPESA_CONSUMER_SECRET": masked(mpesa_config.CONSUMER_SECRET),
+            "MPESA_PASSKEY": masked(mpesa_config.PASSKEY),
+            # Not secret - shown in full so it can be visually diffed
+            # against the expected value directly.
+            "MPESA_SHORTCODE": mpesa_config.SHORTCODE or "MISSING/EMPTY",
+            "MPESA_CALLBACK_URL": mpesa_config.CALLBACK_URL or "MISSING/EMPTY",
+            "MPESA_ENV": mpesa_config.ENV,
+            "configured": _configured(),
+            "missing": _missing_vars(),
+        })
+
+    # -----------------------------------------------------------------------
     # Real natural-language agent routing via Groq (OpenAI-compatible tool
     # calling), replacing the frontend's keyword/regex matching for anything
     # that doesn't fit its fixed patterns. The tool schemas below are built
