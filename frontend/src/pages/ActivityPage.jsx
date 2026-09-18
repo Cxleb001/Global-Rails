@@ -7,40 +7,73 @@ function formatTime(timestamp) {
 
 function ActivityPage({ activities }) {
   return (
-    <section className="content">
-      <p className="page-intro">
-        Real executions from this session — every tool call from the AI
-        Agent chat or the Swap/Transfer/x402 pages lands here as it happens.
-      </p>
+    <section className="content activity-page">
+      <div className="page-header">
+        <div>
+          <span className="eyebrow">HISTORY</span>
+          <h2>Activity</h2>
+          <p>
+            A record of transactions and actions executed during this
+            session.
+          </p>
+        </div>
 
-      <div className="card">
-        <div className="card-heading">
+        <div className="activity-count">
+          {activities.length}{" "}
+          {activities.length === 1 ? "execution" : "executions"}
+        </div>
+      </div>
+
+      <div className="activity-card">
+        <div className="activity-card-header">
           <div>
             <span className="card-label">SESSION HISTORY</span>
-            <h3>Latest executions</h3>
+            <h3>Recent activity</h3>
           </div>
+
+          <span className="activity-live">
+            <span />
+            Live
+          </span>
         </div>
 
         {activities.length === 0 ? (
-          <p className="empty-state">
-            Nothing yet — try a quick-reply in the AI Agent tab, or run a
-            swap/transfer/x402 payment from their pages.
-          </p>
+          <div className="activity-empty">
+            <div className="empty-icon">↗</div>
+
+            <h3>No activity yet</h3>
+
+            <p>
+              Your completed AI agent actions, swaps, transfers, and
+              x402 payments will appear here.
+            </p>
+          </div>
         ) : (
-          activities.map((item) => (
-            <div className="activity" key={item.id}>
-              <div className="activity-icon">{item.icon}</div>
+          <div className="activity-list">
+            {activities.map((item) => (
+              <div className="activity-item" key={item.id}>
+                <div className="activity-icon">
+                  {item.icon}
+                </div>
 
-              <div>
-                <strong>{item.title}</strong>
-                <span>
-                  {item.detail} · {formatTime(item.timestamp)}
-                </span>
+                <div className="activity-main">
+                  <strong>{item.title}</strong>
+
+                  <span>
+                    {item.detail}
+                  </span>
+                </div>
+
+                <div className="activity-meta">
+                  <strong>{item.amount}</strong>
+
+                  <span>
+                    {formatTime(item.timestamp)}
+                  </span>
+                </div>
               </div>
-
-              <b>{item.amount}</b>
-            </div>
-          ))
+            ))}
+          </div>
         )}
       </div>
     </section>
