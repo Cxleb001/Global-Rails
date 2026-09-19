@@ -9,43 +9,48 @@ import X402Page from "./pages/X402Page";
 import ActivityPage from "./pages/ActivityPage";
 import DeveloperPage from "./pages/DeveloperPage";
 
-// Maps a free-text request to one of the backend's registered tools plus its
-// payload, and how to describe a successful result. This is a lightweight
-// keyword/regex router, not an LLM call — it's what lets each quick-reply
-// suggestion (and reasonable free-typed variants) actually hit a different
-// tool instead of every message calling fetch_market_price regardless of
-// what was typed. Swapping this for a real LLM tool-call later only means
-// replacing the body of this function; sendMessage() and the fetch call
-// don't need to change.
-// Turns any http(s) URL inside a plain message string into a real,
-// clickable link when rendered — used for both the keyword router's
-// describe() strings and the Groq agent's replies, since both just
-// produce plain text and neither needs to know this exists.
 function linkify(text) {
   const urlRegex = /(https?:\/\/[^\s)]+)/g;
   const parts = [];
   let lastIndex = 0;
   let match;
+
   while ((match = urlRegex.exec(text)) !== null) {
     if (match.index > lastIndex) {
       parts.push(text.slice(lastIndex, match.index));
     }
+
     const url = match[0];
-    const linkKey = match.index;
-    parts.push(React.createElement("a", { key: linkKey, href: url, target: "_blank", rel: "noopener noreferrer", className: "msg-link" }, url));
+
+    parts.push(
+      React.createElement(
+        "a",
+        {
+          key: match.index,
+          href: url,
+          target: "_blank",
+          rel: "noopener noreferrer",
+          className: "msg-link",
+        },
+        url
+      )
+    );
+
     lastIndex = match.index + match[0].length;
   }
+
   if (lastIndex < text.length) {
     parts.push(text.slice(lastIndex));
   }
+
   return parts;
 }
 
 function pickToolFromMessage(text) {
-  // "Swap 100 USDT to USDC"
   const swapMatch = text.match(
     /swap\s+([\d.]+)\s*([a-zA-Z.]+)\s+(?:to|for|into)\s+([a-zA-Z.]+)/i
   );
+
   if (swapMatch) {
     return {
       tool: "swap_tokens",
@@ -62,20 +67,15 @@ function pickToolFromMessage(text) {
     };
   }
 
-  // "Send 20 USDC to M-Pesa 0712345678" or "Send 20 KES to 254712345678"
   if (/m-?pesa|momo|mobile money|off.?ramp|payout/i.test(text)) {
     const amountMatch = text.match(/([\d.]+)\s*([a-zA-Z]+)/);
-    // Kenyan mobile format: 07XXXXXXXX / 01XXXXXXXX / 2547XXXXXXXX / +254...
     const phoneMatch = text.match(/(?:\+?254|0)([71]\d{8})\b/);
+
     return {
       tool: "off_ramp_payout",
       payload: {
         amount: amountMatch ? parseFloat(amountMatch[1]) : 20,
         currency: "KES",
-        // Falls back to the demo placeholder only when no real number was
-        // typed (e.g. the quick-reply button's canned message) — was
-        // previously hardcoded unconditionally, silently ignoring any
-        // number the user actually specified.
         phone_number: phoneMatch ? phoneMatch[0] : "254700000000",
       },
       describe: (d) =>
@@ -87,20 +87,23 @@ function pickToolFromMessage(text) {
     };
   }
 
-  // "Pay the x402 request"
   if (/x402|invoice|payment request/i.test(text)) {
     return {
       tool: "x402_get_invoice",
-      payload: { url: "https://example.com/protected-resource", token: "USDC" },
+      payload: {
+        url: "https://example.com/protected-resource",
+        token: "USDC",
+      },
       describe: (d) =>
         `Resolved invoice ${d.invoice_id}: ${d.amount} ${d.token} on ${d.chain} (status ${d.status}).`,
     };
   }
 
-  // An explicit destination address implies a transfer.
   const addressMatch = text.match(/0x[a-fA-F0-9]{6,}/);
+
   if (addressMatch) {
     const amountMatch = text.match(/([\d.]+)\s*([a-zA-Z]+)/);
+
     return {
       tool: "transfer",
       payload: {
@@ -113,13 +116,13 @@ function pickToolFromMessage(text) {
     };
   }
 
-  // Default: a price/rate lookup. Try to pull a "X to Y" or "X/Y" pair out
-  // of the text; otherwise fall back to USDC/KES.
   const pairMatch = text.match(
     /\b([a-zA-Z]{2,6})\b\s*(?:\/|to|vs\.?)\s*\b([a-zA-Z]{2,6})\b/i
   );
+
   const token = pairMatch ? pairMatch[1].toUpperCase() : "USDC";
   const quote = pairMatch ? pairMatch[2].toUpperCase() : "KES";
+
   return {
     tool: "fetch_market_price",
     payload: { token, quote },
@@ -127,9 +130,6 @@ function pickToolFromMessage(text) {
   };
 }
 
-// Icon + display title per tool, used when logging a successful call (from
-// chat, either routing path, or a dedicated page) into the shared activity
-// feed that Overview, the Activity page, and LAST EXECUTION all read from.
 const TOOL_META = {
   fetch_market_price: { icon: "◈", title: "Market Data" },
   swap_tokens: { icon: "⇄", title: "Token Swap" },
@@ -150,26 +150,21 @@ function App() {
   ]);
 
   const [input, setInput] = useState("");
-
-  // Shared across the AI Agent chat (both the Groq path and the keyword
-  // fallback) and every dedicated tool page, so Overview, the Activity
-  // page, and the "LAST EXECUTION" panel all reflect the same real history
-  // no matter which surface triggered the call.
   const [activities, setActivities] = useState([]);
+
+  const [overviewRate, setOverviewRate] = useState(null);
+  const [overviewRateError, setOverviewRateError] = useState(null);
 
   const logActivity = (entry) => {
     setActivities((current) => [
-      { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, timestamp: Date.now(), ...entry },
+      {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        timestamp: Date.now(),
+        ...entry,
+      },
       ...current,
     ]);
   };
-
-  // Overview's Market Data card already says "● LIVE" in its label — this
-  // makes that true. Same fetch_market_price call MarketDataPage's own
-  // "Fetch prices" button makes, just triggered automatically on load
-  // instead of waiting for a click, since Overview has no button for it.
-  const [overviewRate, setOverviewRate] = useState(null);
-  const [overviewRateError, setOverviewRateError] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -177,9 +172,13 @@ function App() {
     const maxAttempts = 3;
 
     const tryFetch = () => {
-      callTool("fetch_market_price", { token: "USDC", quote: "KES" })
+      callTool("fetch_market_price", {
+        token: "USDC",
+        quote: "KES",
+      })
         .then((res) => {
           if (cancelled) return;
+
           if (res.success) {
             setOverviewRate(res.data);
             setOverviewRateError(null);
@@ -192,6 +191,7 @@ function App() {
         })
         .catch((err) => {
           if (cancelled) return;
+
           if (attempt < maxAttempts - 1) {
             attempt += 1;
             setTimeout(tryFetch, 5000);
@@ -202,101 +202,127 @@ function App() {
     };
 
     tryFetch();
+
     return () => {
       cancelled = true;
     };
   }, []);
 
- const sendMessage = async () => {
-  if (!input.trim()) return;
+  const sendMessage = async () => {
+    if (!input.trim()) return;
 
-  const userText = input.trim();
+    const userText = input.trim();
 
-  setMessages((current) => [
-    ...current,
-    {
-      role: "user",
-      text: userText,
-    },
-  ]);
+    setMessages((current) => [
+      ...current,
+      {
+        role: "user",
+        text: userText,
+      },
+    ]);
 
-  setInput("");
+    setInput("");
 
-  // Real LLM-based routing first (Groq, server-side) — falls back to the
-  // keyword router below if GROQ_API_KEY isn't set on the backend yet, or
-  // if the LLM call itself fails for any reason, so the agent keeps
-  // working either way instead of hitting a dead end.
-  try {
-    const history = messages.slice(-8).map((m) => ({
-      role: m.role === "agent" ? "assistant" : "user",
-      content: m.text,
-    }));
+    try {
+      const history = messages.slice(-8).map((m) => ({
+        role: m.role === "agent" ? "assistant" : "user",
+        content: m.text,
+      }));
 
-    const agentResponse = await fetch("/api/agent/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: userText, history }),
-    });
-    const agentResult = await agentResponse.json();
+      const agentResponse = await fetch("/api/agent/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: userText,
+          history,
+        }),
+      });
 
-    if (agentResult.configured && !agentResult.error) {
-      if (agentResult.tool_used && agentResult.tool_result?.success) {
-        const meta = TOOL_META[agentResult.tool_used] || { icon: "✦", title: agentResult.tool_used };
+      const agentResult = await agentResponse.json();
+
+      if (agentResult.configured && !agentResult.error) {
+        if (
+          agentResult.tool_used &&
+          agentResult.tool_result?.success
+        ) {
+          const meta = TOOL_META[agentResult.tool_used] || {
+            icon: "✦",
+            title: agentResult.tool_used,
+          };
+
+          logActivity({
+            icon: meta.icon,
+            title: meta.title,
+            detail: "via AI Agent chat",
+            amount:
+              agentResult.reply.length > 40
+                ? `${agentResult.reply.slice(0, 40)}...`
+                : agentResult.reply,
+          });
+        }
+
+        setMessages((current) => [
+          ...current,
+          {
+            role: "agent",
+            text: agentResult.reply,
+          },
+        ]);
+
+        return;
+      }
+    } catch {
+      // Fall back to local routing.
+    }
+
+    const { tool, payload, describe } =
+      pickToolFromMessage(userText);
+
+    try {
+      const result = await callTool(tool, payload);
+
+      const agentText = result.success
+        ? describe(result.data)
+        : `I couldn't complete that (${tool}): ${
+            result.error || "Unknown error"
+          }`;
+
+      if (result.success) {
+        const meta = TOOL_META[tool] || {
+          icon: "✦",
+          title: tool,
+        };
+
         logActivity({
           icon: meta.icon,
           title: meta.title,
           detail: "via AI Agent chat",
-          amount: agentResult.reply.length > 40 ? `${agentResult.reply.slice(0, 40)}...` : agentResult.reply,
+          amount:
+            agentText.length > 40
+              ? `${agentText.slice(0, 40)}...`
+              : agentText,
         });
       }
+
       setMessages((current) => [
         ...current,
-        { role: "agent", text: agentResult.reply },
+        {
+          role: "agent",
+          text: agentText,
+        },
       ]);
-      return;
+    } catch (error) {
+      setMessages((current) => [
+        ...current,
+        {
+          role: "agent",
+          text: `I couldn't connect to the Global Rails backend: ${error.message}`,
+        },
+      ]);
     }
-    // configured === false (no GROQ_API_KEY yet) or a Groq-side error —
-    // fall through to the keyword router rather than stopping here.
-  } catch {
-    // Couldn't even reach /api/agent/chat — also fall through.
-  }
-
-  const { tool, payload, describe } = pickToolFromMessage(userText);
-
-  try {
-    const result = await callTool(tool, payload);
-
-    const agentText = result.success
-      ? describe(result.data)
-      : `I couldn't complete that (${tool}): ${result.error || "Unknown error"}`;
-
-    if (result.success) {
-      const meta = TOOL_META[tool] || { icon: "✦", title: tool };
-      logActivity({
-        icon: meta.icon,
-        title: meta.title,
-        detail: "via AI Agent chat",
-        amount: agentText.length > 40 ? `${agentText.slice(0, 40)}...` : agentText,
-      });
-    }
-
-    setMessages((current) => [
-      ...current,
-      {
-        role: "agent",
-        text: agentText,
-      },
-    ]);
-  } catch (error) {
-    setMessages((current) => [
-      ...current,
-      {
-        role: "agent",
-        text: `I couldn't connect to the Global Rails backend: ${error.message}`,
-      },
-    ]);
-  }
-};
+  };
 
   const applySuggestion = (text) => {
     setInput(text);
@@ -319,13 +345,55 @@ function App() {
       <aside className="sidebar">
         <div className="logo">
           <div className="logo-mark">
-            <svg width="26" height="26" viewBox="-16 -16 32 32" aria-hidden="true">
-              <circle cx="0" cy="0" r="15" fill="none" stroke="#101400" strokeWidth="1.6" />
-              <path d="M 0,-15 A 11.49,15 0 0 1 0,15" fill="none" stroke="#101400" strokeWidth="1" opacity="0.75" />
-              <path d="M 0,-15 A 11.49,15 0 0 0 0,15" fill="none" stroke="#101400" strokeWidth="1" opacity="0.75" />
-              <path d="M -13.75 -6 Q 0 -3.3 13.75 -6" fill="none" stroke="#101400" strokeWidth="1.6" strokeLinecap="round" />
-              <path d="M -15 0 L 15 0" fill="none" stroke="#101400" strokeWidth="1.6" strokeLinecap="round" />
-              <path d="M -13.75 6 Q 0 3.3 13.75 6" fill="none" stroke="#101400" strokeWidth="1.6" strokeLinecap="round" />
+            <svg
+              width="26"
+              height="26"
+              viewBox="-16 -16 32 32"
+              aria-hidden="true"
+            >
+              <circle
+                cx="0"
+                cy="0"
+                r="15"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+              />
+              <path
+                d="M 0,-15 A 11.49,15 0 0 1 0,15"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1"
+                opacity="0.75"
+              />
+              <path
+                d="M 0,-15 A 11.49,15 0 0 0 0,15"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1"
+                opacity="0.75"
+              />
+              <path
+                d="M -13.75 -6 Q 0 -3.3 13.75 -6"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+              />
+              <path
+                d="M -15 0 L 15 0"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+              />
+              <path
+                d="M -13.75 6 Q 0 3.3 13.75 6"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+              />
             </svg>
           </div>
 
@@ -368,7 +436,7 @@ function App() {
 
       <main className="main">
         <header className="topbar">
-          <div>
+          <div className="topbar-title">
             <span className="eyebrow">GLOBAL RAILS</span>
             <h2>{activePage}</h2>
           </div>
@@ -376,7 +444,7 @@ function App() {
           <div className="topbar-right">
             <div className="network">
               <span className="network-dot"></span>
-              Testnet
+              Avalanche Fuji
             </div>
 
             <div className="avatar">M</div>
@@ -386,7 +454,7 @@ function App() {
         {activePage === "AI Agent" ? (
           <section className="agent-page">
             <div className="agent-page-header">
-              <div>
+              <div className="agent-heading-copy">
                 <div className="large-agent-icon">✦</div>
 
                 <span className="eyebrow">
@@ -396,15 +464,15 @@ function App() {
                 <h1>What can I execute for you?</h1>
 
                 <p>
-                  Use natural language to interact with Global Rails.
-                  Your agent can fetch prices, swap assets, transfer
-                  funds and settle x402 payments.
+                  Tell Global Rails what you want to do in plain language.
+                  The agent can check markets, swap assets, transfer funds,
+                  and handle machine-to-machine payments.
                 </p>
               </div>
 
               <div className="connection-badge">
                 <span></span>
-                MCP CONNECTED
+                AGENT ONLINE
               </div>
             </div>
 
@@ -416,7 +484,7 @@ function App() {
 
                     <div>
                       <strong>Global Rails Agent</strong>
-                      <span>Autonomous financial execution</span>
+                      <span>Financial execution assistant</span>
                     </div>
                   </div>
 
@@ -453,14 +521,12 @@ function App() {
                       )
                     }
                   >
-                    What's the USDC/KES rate?
+                    USDC / KES rate
                   </button>
 
                   <button
                     onClick={() =>
-                      applySuggestion(
-                        "Swap 10 USDC to LINK"
-                      )
+                      applySuggestion("Swap 10 USDC to LINK")
                     }
                   >
                     Swap 10 USDC
@@ -468,9 +534,7 @@ function App() {
 
                   <button
                     onClick={() =>
-                      applySuggestion(
-                        "Send 20 USDC to M-Pesa"
-                      )
+                      applySuggestion("Send 20 USDC to M-Pesa")
                     }
                   >
                     Send to M-Pesa
@@ -478,12 +542,10 @@ function App() {
 
                   <button
                     onClick={() =>
-                      applySuggestion(
-                        "Pay the x402 request"
-                      )
+                      applySuggestion("Pay the x402 request")
                     }
                   >
-                    Pay x402 request
+                    Pay x402
                   </button>
                 </div>
 
@@ -499,17 +561,20 @@ function App() {
                         sendMessage();
                       }
                     }}
-                    placeholder="Tell your agent what you want to do..."
+                    placeholder="Ask your financial agent..."
                   />
 
-                  <button onClick={sendMessage}>
+                  <button
+                    onClick={sendMessage}
+                    disabled={!input.trim()}
+                    aria-label="Send message"
+                  >
                     ↑
                   </button>
                 </div>
 
                 <p className="input-hint">
-                  Press Enter to send · Your agent executes
-                  financial tools through MCP
+                  Enter to send · Agent executes through Global Rails tools
                 </p>
               </div>
 
@@ -526,8 +591,8 @@ function App() {
                   <div className="tool-icon">◈</div>
 
                   <div>
-                    <strong>fetch_price</strong>
-                    <span>Market data oracle</span>
+                    <strong>fetch_market_price</strong>
+                    <span>Live market rates</span>
                   </div>
 
                   <i>Ready</i>
@@ -537,7 +602,7 @@ function App() {
                   <div className="tool-icon">⇄</div>
 
                   <div>
-                    <strong>swap</strong>
+                    <strong>swap_tokens</strong>
                     <span>Token exchange</span>
                   </div>
 
@@ -549,7 +614,7 @@ function App() {
 
                   <div>
                     <strong>transfer</strong>
-                    <span>Stablecoin settlement</span>
+                    <span>Stablecoin transfers</span>
                   </div>
 
                   <i>Ready</i>
@@ -560,7 +625,7 @@ function App() {
 
                   <div>
                     <strong>x402</strong>
-                    <span>Agent-to-agent payments</span>
+                    <span>Machine payments</span>
                   </div>
 
                   <i>Ready</i>
@@ -574,7 +639,9 @@ function App() {
                   {activities.length === 0 ? (
                     <>
                       <strong>No executions yet</strong>
-                      <span>Your agent activity will appear here.</span>
+                      <span>
+                        Your agent activity will appear here.
+                      </span>
                     </>
                   ) : (
                     <>
@@ -601,17 +668,38 @@ function App() {
         ) : activePage === "Developer" ? (
           <DeveloperPage />
         ) : (
-          <section className="content">
-            <div className="balance-card">
+          <section className="content overview-page">
+            <div className="overview-heading">
               <div>
+                <span className="eyebrow">FINANCIAL WORKSPACE</span>
+                <h1>Your financial overview</h1>
+                <p>
+                  Monitor your testnet portfolio and let your agent handle
+                  execution when you need it.
+                </p>
+              </div>
+
+              <button
+                className="overview-agent-button"
+                onClick={() => setActivePage("AI Agent")}
+              >
+                <span>✦</span>
+                Ask your agent
+              </button>
+            </div>
+
+            <div className="balance-card">
+              <div className="balance-main">
                 <span className="card-label">
-                  TOTAL PORTFOLIO (DEMO)
+                  TOTAL PORTFOLIO VALUE
                 </span>
 
-                <h3>$1,248.32</h3>
+                <div className="balance-value">
+                  $1,248.32
+                </div>
 
                 <span className="demo-note">
-                  Demo balances — connect a wallet for live figures
+                  Demo portfolio · Avalanche Fuji testnet
                 </span>
               </div>
 
@@ -619,17 +707,19 @@ function App() {
                 <div>
                   <span>USDC</span>
                   <strong>842.10</strong>
+                  <small>$842.10</small>
                 </div>
 
                 <div>
                   <span>USDT</span>
                   <strong>406.22</strong>
+                  <small>$406.22</small>
                 </div>
               </div>
             </div>
 
-            <div className="grid">
-              <div className="card">
+            <div className="grid overview-grid">
+              <div className="card overview-market-card">
                 <div className="card-heading">
                   <div>
                     <span className="card-label">
@@ -639,27 +729,38 @@ function App() {
                     <h3>USDC / KES</h3>
                   </div>
 
-                  <span className="live">● LIVE</span>
+                  <span className="live">
+                    <span></span>
+                    LIVE
+                  </span>
                 </div>
 
                 <div className="rate">
-                  <strong>{overviewRate ? overviewRate.rate : overviewRateError ? "—" : "…"}</strong>
+                  <strong>
+                    {overviewRate
+                      ? overviewRate.rate
+                      : overviewRateError
+                      ? "—"
+                      : "…"}
+                  </strong>
+
                   <span>KES</span>
                 </div>
 
                 <div className="rate-footer">
                   <span>1 USDC</span>
+
                   <span>
                     {overviewRate
                       ? "Updated just now"
                       : overviewRateError
-                        ? "Rate temporarily unavailable"
-                        : "Loading…"}
+                      ? "Rate unavailable"
+                      : "Loading market data…"}
                   </span>
                 </div>
               </div>
 
-              <div className="card">
+              <div className="card overview-activity-card">
                 <div className="card-heading">
                   <div>
                     <span className="card-label">
@@ -668,17 +769,31 @@ function App() {
 
                     <h3>Latest executions</h3>
                   </div>
+
+                  {activities.length > 0 && (
+                    <button
+                      className="text-button"
+                      onClick={() => setActivePage("Activity")}
+                    >
+                      View all
+                    </button>
+                  )}
                 </div>
 
                 {activities.length === 0 ? (
-                  <p className="empty-state">
-                    Nothing yet — try a quick-reply in the AI Agent tab, or
-                    run a swap/transfer/x402 payment from their pages.
-                  </p>
+                  <div className="empty-state overview-empty">
+                    <strong>No executions yet</strong>
+                    <span>
+                      Your agent activity will appear here after your
+                      first transaction or market request.
+                    </span>
+                  </div>
                 ) : (
                   activities.slice(0, 3).map((item) => (
                     <div className="activity" key={item.id}>
-                      <div className="activity-icon">{item.icon}</div>
+                      <div className="activity-icon">
+                        {item.icon}
+                      </div>
 
                       <div>
                         <strong>{item.title}</strong>
@@ -693,21 +808,24 @@ function App() {
             </div>
 
             <section className="dashboard-agent">
-              <div>
+              <div className="dashboard-agent-copy">
                 <div className="dashboard-agent-icon">
                   ✦
                 </div>
 
-                <span className="card-label">
-                  AI FINANCIAL AGENT
-                </span>
+                <div>
+                  <span className="card-label">
+                    AI FINANCIAL AGENT
+                  </span>
 
-                <h3>Your autonomous financial assistant</h3>
+                  <h3>Your financial operations, in plain language.</h3>
 
-                <p>
-                  Ask Global Rails to check rates, swap tokens,
-                  transfer funds or handle an x402 payment.
-                </p>
+                  <p>
+                    Ask for a rate, request a swap, send stablecoins,
+                    or resolve an x402 payment. The agent turns your
+                    request into an executable financial action.
+                  </p>
+                </div>
               </div>
 
               <button
